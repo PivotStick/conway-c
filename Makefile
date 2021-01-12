@@ -4,4 +4,3 @@ all:
 	gcc src/main.c -o app -Iinclude ${LIBS}
 	./app
 	rm app
-	clear
