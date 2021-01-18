@@ -2,9 +2,9 @@
 #include <stdbool.h>
 #include <SDL2/SDL.h>
 
-const int CELL_SIZE = 15;
-const int WIDTH = 50;
-const int HEIGHT = 50;
+const int CELL_SIZE = 10;
+const int WIDTH = 140;
+const int HEIGHT = 70;
 
 int getAliveNeighboors(bool grid[WIDTH][HEIGHT], int x, int y)
 {
@@ -16,20 +16,49 @@ int getAliveNeighboors(bool grid[WIDTH][HEIGHT], int x, int y)
     for (xOff = -1; xOff <= 1; xOff++)
         for (yOff = -1; yOff <= 1; yOff++)
         {
-            int xI = x + xOff;
-            int yI = y + yOff;
+            int xI = (x + xOff) % WIDTH;
+            int yI = (y + yOff) % HEIGHT;
 
-            if (xI < 0 || yI < 0 || xI > WIDTH -1 || yI > HEIGHT - 1)
-                continue;
+            if (xI < 0) xI = WIDTH + xI;
+            if (yI < 0) yI = HEIGHT + yI;
 
             if (xOff == 0 && yOff == 0)
                 continue;
 
-            if (grid[xI][yI])
-                aliveCount++;
+            aliveCount += grid[xI][yI];
         }
 
     return aliveCount;
+}
+
+void clearGrid(bool grid[WIDTH][HEIGHT])
+{
+    for (int x = 0; x < WIDTH; x++)
+        for (int y = 0; y < HEIGHT; y++)
+            grid[x][y] = false;
+}
+
+void setCellAtMouse(bool grid[WIDTH][HEIGHT], bool value)
+{
+    int mouseX = 0;
+    int mouseY = 0;
+
+    SDL_GetMouseState(&mouseX, &mouseY);
+
+    int xIndex = mouseX / CELL_SIZE;
+    int yIndex = mouseY / CELL_SIZE;
+
+    // Get a pointer to the cell's value
+    bool *cell = &grid[xIndex][yIndex];
+    // Set the value he's pointing at
+    *cell = value;
+}
+
+void copyGrid(bool from[WIDTH][HEIGHT], bool to[WIDTH][HEIGHT])
+{
+    for (int x = 0; x < WIDTH; x++)
+        for (int y = 0; y < HEIGHT; y++)
+            to[x][y] = from[x][y];
 }
 
 int main()
@@ -40,6 +69,7 @@ int main()
 
     bool cells[WIDTH][HEIGHT];
     bool tmpCells[WIDTH][HEIGHT];
+    bool checkpoint[WIDTH][HEIGHT];
 
     if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
     {
@@ -48,12 +78,12 @@ int main()
     }
 
     window = SDL_CreateWindow(
-        "Guillaume le 2",
+        "Game Of Life - Drawing...",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         WIDTH * CELL_SIZE,
         HEIGHT * CELL_SIZE,
-        SDL_WINDOW_SHOWN
+        SDL_WINDOW_OPENGL
     );
 
     if (window == NULL)
@@ -74,9 +104,8 @@ int main()
         return -1;
     }
 
-    for (int x = 0; x < WIDTH; x++)
-        for (int y = 0; y < HEIGHT; y++)
-            cells[x][y] = false;
+    // Initialize cells values (false)
+    clearGrid(cells);
 
     SDL_Rect rect;
     rect.h = CELL_SIZE;
@@ -86,42 +115,72 @@ int main()
 
     bool running = true;
     bool playing = false;
+    bool drawing = false;
+    bool shouldRemove = false;
 
-    int mouseX = 0;
-    int mouseY = 0;
+    Uint64 NOW = SDL_GetPerformanceCounter();
+    Uint64 LAST = 0;
 
-    int xIndex;
-    int yIndex;
+    double deltaTime = 0;
+    double timer = 0;
 
     while (running)
     {
+        LAST = NOW;
+        NOW = SDL_GetPerformanceCounter();
+
+        deltaTime = (double)((NOW - LAST) / (double)SDL_GetPerformanceFrequency());
+
         if (SDL_PollEvent(&event))
             switch (event.type)
             {
             case SDL_QUIT: running = false; break;
+            case SDL_MOUSEBUTTONUP: drawing = false; break;
             case SDL_MOUSEBUTTONDOWN:
-                SDL_GetMouseState(&mouseX, &mouseY);
-
-                xIndex = mouseX / CELL_SIZE;
-                yIndex = mouseY / CELL_SIZE;
-
-                bool *cell = &cells[xIndex][yIndex];
-                *cell = !*cell;
+                drawing = true;
+                setCellAtMouse(cells, !shouldRemove);
+                break;
+            case SDL_MOUSEMOTION:
+                if (!drawing || playing) break;
+                setCellAtMouse(cells, !shouldRemove);
+                break;
+            case SDL_KEYUP:
+                if (event.key.keysym.sym == SDLK_LALT)
+                    shouldRemove = false;
                 break;
             case SDL_KEYDOWN:
-                if (event.key.keysym.sym == SDLK_SPACE)
+                switch (event.key.keysym.sym)
+                {
+                case SDLK_SPACE:
                     playing = !playing;
-
+                    copyGrid(cells, checkpoint);
+                    break;
+                case SDLK_LALT: shouldRemove = true; break;
+                case SDLK_r:
+                    clearGrid(cells);
+                    playing = false;
+                    break;
+                case SDLK_p:
+                    copyGrid(checkpoint, cells);
+                    playing = false;
+                    break;
+                
+                default: break;
+                }
+                SDL_SetWindowTitle(window, playing
+                    ? "Game Of Life - Playing!"
+                    : "Game Of Life - Drawing."
+                );
                 break;
             default: break;
             }
 
+        timer += deltaTime;
         // Logic
-        if (playing)
+        if (playing && timer >= .05)
         {
-            for (int x = 0; x < WIDTH; x++)
-                for (int y = 0; y < HEIGHT; y++)
-                    tmpCells[x][y] = cells[x][y];
+            timer = 0;
+            copyGrid(cells, tmpCells);
             
             for (int x = 0; x < WIDTH; x++)
                 for (int y = 0; y < HEIGHT; y++)
